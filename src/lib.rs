@@ -5,3 +5,5 @@ mod hash;
 mod redblack;
 mod stream;
 pub mod vector;
+
+mod test;
