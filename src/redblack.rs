@@ -1,14 +1,24 @@
 use std::cmp::{ Ord, Ordering };
-use std::rc::Rc;
+use std::fmt::Debug;
 use std::iter::FromIterator;
+use std::rc::Rc;
 
+#[derive(Debug, Eq, PartialEq)]
+enum Color {
+    Red, 
+    Black,
+}
+
+#[derive(Debug)]
 struct Node<T> { 
     value: T,
+    color: Color,
     left: Option<Rc<Node<T>>>,
     right: Option<Rc<Node<T>>>
 }
 
-pub struct Tree<T>(Option<Rc<Node<T>>>);
+#[derive(Debug)]
+pub struct RedBlackTree<T>(Option<Rc<Node<T>>>);
 
 pub struct TreeIterator<T>(Vec<Rc<Node<T>>>);
 
@@ -16,6 +26,7 @@ impl <T> Node<T> where T : Clone + Ord {
     fn new(value: &T) -> Rc<Node<T>> {
         Rc::new(Node {
             value: value.clone(),
+            color: Color::Red,
             left: None,
             right: None,
         })
@@ -32,6 +43,7 @@ impl <T> Node<T> where T : Clone + Ord {
                 if new_left.is_some() {
                     Some(Rc::new(Node {
                         value: self.value.clone(),
+                        color: Color::Red,
                         left: new_left,
                         right: self.right.clone(),
                     }))
@@ -47,6 +59,7 @@ impl <T> Node<T> where T : Clone + Ord {
                 if new_right.is_some() {
                     Some(Rc::new(Node { 
                         value: self.value.clone(),
+                        color: Color::Red,
                         left: self.left.clone(),
                         right: new_right,
                     }))
@@ -67,6 +80,7 @@ impl <T> Node<T> where T : Clone + Ord {
                 };
                 Some(Rc::new(Node {
                     value: self.value.clone(),
+                    color: Color::Red,
                     left: new_left,
                     right: self.right.clone(),
                 }))
@@ -78,6 +92,7 @@ impl <T> Node<T> where T : Clone + Ord {
                 };
                 Some(Rc::new(Node {
                     value: self.value.clone(),
+                    color: Color::Red,
                     left: self.left.clone(),
                     right: new_right,
                 }))
@@ -116,6 +131,47 @@ impl <T> Node<T> where T : Clone + Ord {
                 }
         }
     }
+
+    fn validate(&self) -> u32 where T : Debug {
+        // two rules.
+        // 1: A red node must have only black children.
+        if self.color == Color::Red {
+            if let Some(ref left) = self.left {
+                if left.color == Color::Red {
+                    panic!("Red left child of red node. \n{:?}", self);
+                }
+            }
+            if let Some(ref right) = self.right {
+                if right.color == Color::Red {
+                    panic!("Red right child of red node. \n{:?}", self);
+                }
+            }
+        }
+
+        // 2: At each node, the number of black children must be the same on each path to a leaf.
+        //    Calculate this for each subtree and compare. (Note: null subtrees are considered
+        //    black for this calculation.)
+        let blacks_in_left = 
+            if let Some(ref left) = self.left {
+                left.validate()
+            } else {
+                1
+            };
+        let blacks_in_right =
+            if let Some(ref right) = self.right {
+                right.validate()
+            } else {
+                1
+            };
+        if blacks_in_left != blacks_in_right {
+            panic!("Black node balance requirement violated, \n{:?}", self);
+        }
+        if self.color == Color::Black {
+            blacks_in_left + 1
+        } else {
+            blacks_in_left
+        }
+    }
 }
 
 impl <T> Iterator for TreeIterator<T> where T : Clone {
@@ -132,9 +188,9 @@ impl <T> Iterator for TreeIterator<T> where T : Clone {
     }
 }
 
-impl <T> Tree<T> where T : Clone + Ord {
-    pub fn new() -> Tree<T> {
-        Tree(None)
+impl <T> RedBlackTree<T> where T : Clone + Ord {
+    pub fn new() -> RedBlackTree<T> {
+        RedBlackTree(None)
     }
 
     pub fn iter(&self) -> TreeIterator<T> {
@@ -145,13 +201,13 @@ impl <T> Tree<T> where T : Clone + Ord {
         iterator
     }
 
-    pub fn insert(&self, value: &T) -> Tree<T> {
+    pub fn insert(&self, value: &T) -> RedBlackTree<T> {
         match self.0 {
             Some(ref root) => {
                 let new_root = (**root).try_insert(value).unwrap_or(root.clone());
-                Tree(Some(new_root))
+                RedBlackTree(Some(new_root))
             },
-            None => Tree(Some(Node::new(value)))
+            None => RedBlackTree(Some(Node::new(value)))
         }
     }
 
@@ -162,20 +218,26 @@ impl <T> Tree<T> where T : Clone + Ord {
         }
     }
 
-    pub fn remove(&self, value: &T) -> Tree<T> {
+    pub fn remove(&self, value: &T) -> RedBlackTree<T> {
         match self.0 {
             Some(ref root) => {
                 let new_root = (**root).try_remove(value).unwrap_or(root.clone());
-                Tree(Some(new_root))
+                RedBlackTree(Some(new_root))
             },
-            None => Tree(self.0.clone())
+            None => RedBlackTree(self.0.clone())
+        }
+    }
+
+    pub fn validate(&self) where T : Debug {
+        if let Some(ref root) = self.0 {
+            root.validate();
         }
     }
 }
 
-impl <A> FromIterator<A> for Tree<A> where A : Clone + Ord {
+impl <A> FromIterator<A> for RedBlackTree<A> where A : Clone + Ord {
     fn from_iter<T>(iterator: T) -> Self where T: IntoIterator<Item=A> {
-        iterator.into_iter().fold(Tree::new(), |a,t| a.insert(&t))
+        iterator.into_iter().fold(RedBlackTree::new(), |a,t| a.insert(&t))
     }
 }
 
