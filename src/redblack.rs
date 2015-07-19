@@ -1,256 +1,318 @@
+#![allow(dead_code)]
+use std::clone::Clone;
 use std::cmp::{ Ord, Ordering };
-use std::fmt::Debug;
-use std::iter::FromIterator;
 use std::rc::Rc;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 enum Color {
-    Red, 
-    Black,
+    Red,
+    Black
 }
 
-#[derive(Debug)]
-struct Node<T> { 
-    value: T,
+#[derive(Clone)]
+struct Node<K,V> {
     color: Color,
-    left: Option<Rc<Node<T>>>,
-    right: Option<Rc<Node<T>>>
+    key: K,
+    value: V,
+    left: Tree<K,V>,
+    right: Tree<K,V>
 }
 
-#[derive(Debug)]
-pub struct RedBlackTree<T>(Option<Rc<Node<T>>>);
+#[derive(Clone)]
+struct Tree<K,V>(Option<Rc<Node<K,V>>>);
 
-pub struct TreeIterator<T>(Vec<Rc<Node<T>>>);
-
-impl <T> Node<T> where T : Clone + Ord {
-    fn new(value: &T) -> Rc<Node<T>> {
-        Rc::new(Node {
-            value: value.clone(),
-            color: Color::Red,
-            left: None,
-            right: None,
-        })
+impl <K,V> Tree<K,V> where K : Clone + Ord, V : Clone {
+    fn wrap(node: Node<K,V>) -> Self {
+        Tree(Some(Rc::new(node)))
     }
 
-    fn try_insert(&self, value: &T) -> Option<Rc<Node<T>>> {
-        match value.cmp(&self.value) {
-            Ordering::Equal => None,
-            Ordering::Less => {
-                let new_left = match self.left {
-                    Some(ref left) => (*left).try_insert(value),
-                    None => Some(Node::new(value))
-                };
-                if new_left.is_some() {
-                    Some(Rc::new(Node {
-                        value: self.value.clone(),
-                        color: Color::Red,
-                        left: new_left,
-                        right: self.right.clone(),
-                    }))
-                } else {
-                    None
-                }
-            },
-            Ordering::Greater => {
-                let new_right = match self.right {
-                    Some(ref right) => (*right).try_insert(value),
-                    None => Some(Node::new(value))
-                };
-                if new_right.is_some() {
-                    Some(Rc::new(Node { 
-                        value: self.value.clone(),
-                        color: Color::Red,
-                        left: self.left.clone(),
-                        right: new_right,
-                    }))
-                } else {
-                    None
-                }
-            },
+    fn black(k: K, v: V, left: Self, right: Self) -> Self {
+        Tree::wrap(Node { color: Color::Black, key: k, value: v, left: left, right: right })
+    }
+
+    fn red(k: K, v: V, left: Self, right: Self) -> Self {
+        Tree::wrap(Node { color: Color::Red, key: k, value: v, left: left, right: right })
+    }
+
+    fn is_black(&self) -> bool {
+        match self.0 {
+            None => true,
+            Some(ref node) => node.color == Color::Black,
         }
     }
 
-    fn try_remove(&self, value: &T) -> Option<Rc<Node<T>>> {
-        match value.cmp(&self.value) {
-            Ordering::Equal => Node::try_merge(&self.left, &self.right),
-            Ordering::Less => {
-                let new_left = match self.left {
-                    Some(ref left) => (*left).try_remove(value),
-                    None => None
-                };
-                Some(Rc::new(Node {
-                    value: self.value.clone(),
-                    color: Color::Red,
-                    left: new_left,
-                    right: self.right.clone(),
-                }))
-            },
-            Ordering::Greater => {
-                let new_right = match self.right {
-                    Some(ref right) => (*right).try_remove(value),
-                    None => None
-                };
-                Some(Rc::new(Node {
-                    value: self.value.clone(),
-                    color: Color::Red,
-                    left: self.left.clone(),
-                    right: new_right,
-                }))
-            },
-
+    fn is_red(&self) -> bool {
+        match self.0 {
+            None => false,
+            Some(ref node) => node.color == Color::Red,
         }
     }
 
-    fn try_merge(left: &Option<Rc<Node<T>>>, right: &Option<Rc<Node<T>>>) -> Option<Rc<Node<T>>> {
-        match (left, right) {
-            (&None, &None) => None,
-            (&None, right) => right.clone(),
-            (left, &None) => left.clone(),
-            (&Some(ref left), &Some(ref right)) => {
-                let new_right = right.try_insert(&left.value);
-                let new_left = Node::try_merge(&left.left, &left.right);
-                Node::try_merge(&new_left, &new_right)
-            },
-        }
-    }
-
-    fn lookup(&self, value: &T) -> bool {
-        match value.cmp(&self.value) {
-            Ordering::Equal => true,
-            Ordering::Less => 
-                if let Some(ref left) = self.left {
-                    (*left).lookup(value)
+    fn to_black(&self) -> Self {
+        match self.0 {
+            None => self.clone(),
+            Some(ref node) => 
+                if node.color == Color::Red {
+                    Tree::wrap(Node { color: Color::Black, ..(**node).clone() })
                 } else {
-                    false
-                },
-            Ordering::Greater =>
-                if let Some(ref right) = self.right {
-                    (*right).lookup(value)
-                } else {
-                    false
+                    self.clone()
                 }
         }
     }
 
-    fn validate(&self) -> u32 where T : Debug {
-        // two rules.
-        // 1: A red node must have only black children.
-        if self.color == Color::Red {
-            if let Some(ref left) = self.left {
-                if left.color == Color::Red {
-                    panic!("Red left child of red node. \n{:?}", self);
+    fn to_red(&self) -> Self {
+        match self.0 {
+            None => self.clone(),
+            Some(ref node) => 
+                if node.color == Color::Black {
+                    Tree::wrap(Node { color: Color::Red, ..(**node).clone() })
+                } else {
+                    self.clone()
+                }
+        }
+    }
+
+    fn left(&self) -> Self {
+        self.0.as_ref().map_or(Tree(None), |n| n.left.clone())
+    }
+
+    fn right(&self) -> Self {
+        self.0.as_ref().map_or(Tree(None), |n| n.right.clone())
+    }
+
+    fn key(&self) -> K {
+        self.0.as_ref().unwrap().key.clone()
+    }
+
+    fn value(&self) -> V {
+        self.0.as_ref().unwrap().value.clone()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_none()
+    }
+
+    fn updated(&self, k: K, v: V, overwrite: bool) -> Self {
+        fn mk_tree<K : Clone + Ord, V : Clone> 
+            (is_black: bool, z: K, zv: V, l: Tree<K,V>, r: Tree<K,V>) -> Tree<K,V>
+            {
+                if is_black {
+                    Tree::black(z, zv, l, r)
+                } else {
+                    Tree::red(z, zv, l, r)
                 }
             }
-            if let Some(ref right) = self.right {
-                if right.color == Color::Red {
-                    panic!("Red right child of red node. \n{:?}", self);
+        fn balance_left<K : Clone + Ord, V : Clone>
+            (is_black: bool, z: K, zv: V, l: Tree<K,V>, d: Tree<K,V>) -> Tree<K,V> 
+            {
+                if l.is_red() && l.left().is_red() {
+                    Tree::red(l.key(), l.value(), 
+                              Tree::black(l.left().key(), l.left().value(), l.left().left(), l.left().right()),
+                              Tree::black(z, zv, l.right(), d))
+                } else if l.is_red() && l.right().is_red() {
+                    Tree::red(l.right().key(), l.right().value(), 
+                              Tree::black(l.key(), l.value(), l.left(), l.right().left()),
+                              Tree::black(z, zv, l.right().right(), d))
+                } else {
+                    mk_tree(is_black, z, zv, l, d)
                 }
             }
-        }
+        fn balance_right<K : Clone + Ord, V : Clone>
+            (is_black: bool, x: K, xv: V, a: Tree<K,V>, r: Tree<K,V>) -> Tree<K,V>
+            {
+                if r.is_red() && r.left().is_red() {
+                    Tree::red(r.left().key(), r.left().value(),
+                    Tree::black(x, xv, a, r.left().left()),
+                    Tree::black(r.key(), r.value(), r.left().right(), r.right()))
+                } else if r.is_red() && r.right().is_red() {
+                    Tree::red(r.key(), r.value(),
+                    Tree::black(x, xv, a, r.left()),
+                    Tree::black(r.right().key(), r.right().value(), r.right().left(), r.right().right()))
+                } else {
+                    mk_tree(is_black, x, xv, a, r)
+                }
+            }
 
-        // 2: At each node, the number of black children must be the same on each path to a leaf.
-        //    Calculate this for each subtree and compare. (Note: null subtrees are considered
-        //    black for this calculation.)
-        let blacks_in_left = 
-            if let Some(ref left) = self.left {
-                left.validate()
-            } else {
-                1
-            };
-        let blacks_in_right =
-            if let Some(ref right) = self.right {
-                right.validate()
-            } else {
-                1
-            };
-        if blacks_in_left != blacks_in_right {
-            panic!("Black node balance requirement violated, \n{:?}", self);
-        }
-        if self.color == Color::Black {
-            blacks_in_left + 1
+        if self.is_empty() {
+            Tree::red(k, v, Tree(None), Tree(None))
         } else {
-            blacks_in_left
+            match k.cmp(&self.key()) {
+                Ordering::Less =>
+                    balance_left(self.is_black(), self.key(), self.value(),
+                    self.left().updated(k, v, overwrite),
+                    self.right()),
+                    Ordering::Greater =>
+                        balance_right(self.is_black(), self.key(), self.value(),
+                        self.left(),
+                        self.right().updated(k, v, overwrite)),
+                        Ordering::Equal =>
+                            if overwrite {
+                                mk_tree(self.is_black(), k, v, self.left(), self.right())
+                            } else {
+                                self.clone()
+                            },
+            }
         }
+    }
+
+    fn removed(&self, k: K) -> Self {
+        fn balance<K : Clone + Ord, V : Clone>(
+            x: K, xv: V, tl: Tree<K,V>, tr: Tree<K,V>) -> Tree<K,V> {
+            if tl.is_red() {
+                if tr.is_red() {
+                    Tree::red(x, xv, 
+                              tl.to_black(),
+                              tr.to_black())
+                } else if tl.left().is_red() {
+                    Tree::red(tl.key(), tl.value(), 
+                              tl.left().to_black(), 
+                              Tree::black(x, xv, tl.right(), tr))
+                } else if tl.right().is_red() {
+                    Tree::red(tl.right().key(), tl.right().value(), 
+                              Tree::black(tl.key(), tl.value(), tl.left(), tl.right().left()), 
+                              Tree::black(x, xv, tl.right().right(), tr))
+                } else {
+                    Tree::black(x, xv, tl, tr)
+                }
+            } else if tr.is_red() {
+                if tr.right().is_red() {
+                    Tree::red(tr.key(), tr.value(),
+                        Tree::black(x, xv, tl, tr.left()),
+                        tr.right().to_black())
+                } else if tr.left().is_red() {
+                    Tree::red(tr.left().key(), tr.left().value(),
+                        Tree::black(x, xv, tl, tr.left().left()),
+                        Tree::black(tr.key(), tr.value(), tr.left().right(), tr.right()))
+                } else {
+                    Tree::black(x, xv, tl, tr)
+                }
+            } else {
+                Tree::black(x, xv, tl, tr)
+            }
+        }
+
+        fn subl<K : Clone + Ord, V : Clone>(t: Tree<K,V>)  -> Tree<K,V> {
+            assert!(t.is_black());
+            t.to_red()
+        }
+
+        fn balance_left<K : Clone + Ord, V : Clone>
+            (x: K, xv: V, tl: Tree<K,V>, tr: Tree<K,V>) -> Tree<K,V> 
+        {
+                if tl.is_red() {
+                    Tree::red(x, xv, tl.to_black(), tr)
+                } else if tr.is_black() {
+                    balance(x, xv, tl, tr.to_red())
+                } else if tr.is_red() && tr.left().is_black() {
+                    Tree::red(tr.left().key(), tr.right().value(),
+                        Tree::black(x, xv, tl, tr.left().left()),
+                        balance(tr.key(), tr.value(), tr.left().right(), subl(tr.right())))
+                } else {
+                    unreachable!()
+                }
+        }
+        fn balance_right<K : Clone + Ord, V : Clone>
+            (x: K, xv: V, tl: Tree<K,V>, tr: Tree<K,V>) -> Tree<K,V> 
+        {
+            if tr.is_red() {
+                Tree::red(x, xv, tl, tr.to_black())
+            } else if tl.is_black() {
+                balance(x, xv, tl.to_red(), tr)
+            } else if tl.is_red() && tl.right().is_black() {
+                Tree::red(tl.right().key(), tl.right().value(), 
+                          balance(tl.key(), tl.value(), subl(tl.left()), tl.right().left()),
+                          Tree::black(x, xv, tl.right().right(), tr))
+            } else {
+                unreachable!()
+            }
+        }
+
+        fn append<K : Clone + Ord, V : Clone>(tl: Tree<K,V>, tr: Tree<K,V>) -> Tree<K,V> {
+            if tl.is_empty() {
+                tr
+            } else if tr.is_empty() {
+                tl
+            } else if tl.is_red() && tr.is_red() {
+                let bc = append(tl.right(), tr.left());
+                if bc.is_red() {
+                    Tree::red(bc.key(), bc.value(), 
+                              Tree::red(tl.key(), tl.value(), tl.left(), bc.left()),
+                              Tree::red(tr.key(), tr.value(), bc.right(), tr.right()))
+                } else {
+                    Tree::red(tl.key(), tl.value(), tl.left(), Tree::red(tr.key(), tr.value(), bc, tr.right()))
+                }
+            } else if tl.is_black() && tr.is_black() {
+                let bc = append(tl.right(), tr.left());
+                if bc.is_red() {
+                    Tree::red(bc.key(), bc.value(), 
+                              Tree::black(tl.key(), tl.value(), tl.left(), bc.left()),
+                              Tree::black(tr.key(), tr.value(), bc.right(), tr.right()))
+                } else {
+                    balance_left(tl.key(), tl.value(), tl.left(), Tree::black(tr.key(), tr.value(), bc, tr.right()))
+                }
+            } else if tr.is_red() {
+                Tree::red(tr.key(), tr.value(), append(tl, tr.left()), tr.right())
+            } else if tl.is_red() {
+                Tree::red(tl.key(), tl.value(), tl.left(), append(tl.right(), tr))
+            } else {
+                unreachable!()
+            }
+        }
+
+        if self.is_empty() {
+            Tree(None)
+        } else {
+            match k.cmp(&self.key()) {
+                Ordering::Less =>
+                    if self.left().is_black() {
+                        balance_left(self.key(), self.value(), self.left().removed(k), self.right()) 
+                    } else {
+                        Tree::red(self.key(), self.value(), self.left().removed(k), self.right())
+                    },
+                Ordering::Greater =>
+                    if self.right().is_black() {
+                        balance_right(self.key(), self.value(), self.left(), self.right().removed(k))
+                    } else {
+                        Tree::red(self.key(), self.value(), self.left(), self.right().removed(k))
+                    },
+                Ordering::Equal => append(self.left(), self.right())
+            }
+        }
+    }
+
+    fn lookup(&self, k: K) -> Self {
+        let mut tree = self.clone();
+        while !tree.is_empty() {
+            match k.cmp(&tree.key()) {
+                Ordering::Less => tree = tree.left(),
+                Ordering::Greater => tree = tree.right(),
+                Ordering::Equal => break,
+            }
+        }
+        tree
+    }
+
+    pub fn contains(&self, k: K) -> bool {
+        !self.lookup(k).is_empty()
+    }
+
+    pub fn get(&self, k: K) -> Option<V> {
+        self.lookup(k).0.map(|n| n.value.clone())
     }
 }
 
-impl <T> Iterator for TreeIterator<T> where T : Clone {
-    type Item = T;
-    fn next(&mut self) -> Option<T> {
-        match self.0.pop() {
-            Some(ref child) => {
-                let result = Some(child.value.clone());
-                self.enqueue(&child.right);
-                result
-            },
-            None => None,
+#[cfg(test)]
+mod tests {
+    use super::Tree;
+
+    #[test] 
+    fn construction() {
+        let tree = (0..10).fold(Tree(None), |acc, e| acc.updated(e, (), false));
+        for i in 0..10 {
+            assert!(tree.contains(i));
+            assert!(!tree.removed(i).contains(i));
         }
-    }
-}
-
-impl <T> RedBlackTree<T> where T : Clone + Ord {
-    pub fn new() -> RedBlackTree<T> {
-        RedBlackTree(None)
-    }
-
-    pub fn iter(&self) -> TreeIterator<T> {
-        // TreeIterator needs to start with a queue containing all nodes along the path from the
-        // root to the left-most (least) node. So we build that here.
-        let mut iterator = TreeIterator::new();
-        iterator.enqueue(&self.0);
-        iterator
-    }
-
-    pub fn insert(&self, value: &T) -> RedBlackTree<T> {
-        match self.0 {
-            Some(ref root) => {
-                let new_root = (**root).try_insert(value).unwrap_or(root.clone());
-                RedBlackTree(Some(new_root))
-            },
-            None => RedBlackTree(Some(Node::new(value)))
-        }
-    }
-
-    pub fn lookup(&self, value: &T) -> bool {
-        match self.0 {
-            Some(ref root) => root.lookup(value),
-            None => false
-        }
-    }
-
-    pub fn remove(&self, value: &T) -> RedBlackTree<T> {
-        match self.0 {
-            Some(ref root) => {
-                let new_root = (**root).try_remove(value).unwrap_or(root.clone());
-                RedBlackTree(Some(new_root))
-            },
-            None => RedBlackTree(self.0.clone())
-        }
-    }
-
-    pub fn validate(&self) where T : Debug {
-        if let Some(ref root) = self.0 {
-            root.validate();
-        }
-    }
-}
-
-impl <A> FromIterator<A> for RedBlackTree<A> where A : Clone + Ord {
-    fn from_iter<T>(iterator: T) -> Self where T: IntoIterator<Item=A> {
-        iterator.into_iter().fold(RedBlackTree::new(), |a,t| a.insert(&t))
-    }
-}
-
-impl <T> TreeIterator<T> {
-    fn new() -> TreeIterator<T> {
-        TreeIterator(Vec::new())
-    }
-
-    fn enqueue(&mut self, node: &Option<Rc<Node<T>>>) {
-        let mut node = node;
-        while let &Some(ref n) = node {
-            self.0.push(n.clone());
-            node = &n.left;
-        }
+        assert!(!tree.contains(-1));
+        assert!(!tree.contains(10))
     }
 }

@@ -2,8 +2,6 @@
 
 pub mod cons;
 mod hash;
-mod redblack;
+pub mod redblack;
 mod stream;
 pub mod vector;
-
-mod test;
