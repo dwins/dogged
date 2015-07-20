@@ -1,109 +1,92 @@
 use std::fmt::{ Debug, Error, Formatter };
-use std::ops::Deref; 
 use std::rc::Rc;
 
 #[derive(Clone)]
-pub struct List<T>(Rc<Node<T>>);
+pub struct List<T>(Option<Rc<Cons<T>>>);
 
-impl<T> List<T> {
+struct Cons <T> (T, List<T>);
+
+impl<T> List<T> where T : Clone {
     pub fn new() -> List<T> {
-        List(Node::nil())
+        List(None)
     }
 
     pub fn from_slice(xs: &[T]) -> List<T>
         where T : Clone {
-        let node = xs.iter().rev().cloned().fold(Node::nil(), Node::cons);
-        List(node)
+        xs.iter()
+          .rev()
+          .cloned()
+          .fold(List(None), |l, e| l.cons(e))
     }
 
     pub fn iter(&self) -> ListIterator<T> {
-        ListIterator(self.0.deref())
+        ListIterator(self)
     }
 
     pub fn head_tail(&self) -> Option<(&T, List<T>)> {
-        match self.0.deref() {
-            &Node::Cons(ref t, ref tail) => Some((t, List(tail.clone()))),
-            &Node::Nil => None
-        }
+        self.0.as_ref().map(|c| (&c.0, c.1.clone()))
     }
 
     pub fn head(&self) -> Option<&T> {
-        match self.0.deref() {
-            &Node::Cons(ref t, _) => Some(t),
-            &Node::Nil => None,
-        }
+        self.0.as_ref().map(|c| &c.0)
     }
 
     pub fn tail(&self) -> Option<List<T>> {
-        match self.0.deref() {
-            &Node::Cons(_, ref tail) => Some(List(tail.clone())),
-            &Node::Nil => None
-        }
+        self.0.as_ref().map(|c| c.1.clone())
     }
 
     pub fn cons(&self, head: T) -> List<T> {
-        let tail = self.0.clone();
-        List(Node::cons(tail, head))
+        List(Some(Rc::new(Cons(head, self.clone()))))
     }
 
     pub fn reverse(&self) -> List<T>
         where T : Clone {
-        let node = self.iter().cloned().fold(Node::nil(), Node::cons);
-        List(node)
+        self.iter()
+            .cloned()
+            .fold(List(None), |a,e| a.cons(e))
     }
 }
 
 impl <T> Debug for List<T> where T : Debug {
     fn fmt(&self, fmt: &mut Formatter) -> Result<(), Error> {
         try! { fmt.write_str("[") };
-        let mut node = self.0.clone();
+        let mut list = self.clone();
         let mut first = true;
         loop {
-            let next = if let Node::Cons(ref t, ref next) = *node {
-                if first {
-                    first = false;
-                    try! { Debug::fmt(t, fmt) }
-                } else {
-                    try! { fmt.write_fmt(format_args!(", {:?}", t)) };
-                }
-                next.clone()
-            } else {
-                break;
-            };
-            node = next;
+            let next = list.0.as_ref().and_then(|p| {
+                let Cons(ref t, ref rest) = **p;
+                Some((t, rest))
+            });
+            match next {
+                Some((t, rest)) => {
+                    if first { 
+                        first = false;
+                        try! { Debug::fmt(t, fmt) };
+                    } else {
+                        try! { fmt.write_fmt(format_args!(", {:?}", t)) };
+                    }
+                    list = rest
+                },
+                None => break,
+            }
         }
         try! { fmt.write_str("]") };
         Ok(())
     }
 }
 
-enum Node<T> {
-    Cons(T, Rc<Node<T>>),
-    Nil,
-}
-
-impl<T> Node<T> {
-    fn nil() -> Rc<Node<T>> {
-        Rc::new(Node::Nil)
-    }
-
-    fn cons(tail: Rc<Node<T>>, head: T) -> Rc<Node<T>> {
-        Rc::new(Node::Cons(head, tail))
-    }
-}
-
-pub struct ListIterator<'a, T>(&'a Node<T>)
+pub struct ListIterator<'a, T>(&'a List<T>)
 where T : 'a;
 
 impl <'a, T> Iterator for ListIterator<'a, T> {
     type Item = &'a T;
     fn next(&mut self) -> Option<&'a T> {
         match self.0 {
-            &Node::Cons(ref t, ref rest) => {
-                self.0 = rest;
-                Some(t)
+            &List(Some(ref ptr)) => {
+                self.0 = &ptr.1;
+                Some(&ptr.0)
             },
-            &Node::Nil => None
+            &List(None) => None,
         }
     }
 }
