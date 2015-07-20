@@ -1,5 +1,6 @@
-use std::rc::Rc;
+use std::fmt::{ Debug, Error, Formatter };
 use std::ops::Deref; 
+use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct List<T>(Rc<Node<T>>);
@@ -52,6 +53,30 @@ impl<T> List<T> {
     }
 }
 
+impl <T> Debug for List<T> where T : Debug {
+    fn fmt(&self, fmt: &mut Formatter) -> Result<(), Error> {
+        try! { fmt.write_str("[") };
+        let mut node = self.0.clone();
+        let mut first = true;
+        loop {
+            let next = if let Node::Cons(ref t, ref next) = *node {
+                if first {
+                    first = false;
+                    try! { Debug::fmt(t, fmt) }
+                } else {
+                    try! { fmt.write_fmt(format_args!(", {:?}", t)) };
+                }
+                next.clone()
+            } else {
+                break;
+            };
+            node = next;
+        }
+        try! { fmt.write_str("]") };
+        Ok(())
+    }
+}
+
 enum Node<T> {
     Cons(T, Rc<Node<T>>),
     Nil,
@@ -83,13 +108,15 @@ impl <'a, T> Iterator for ListIterator<'a, T> {
     }
 }
 
-// TODO : This should reverse the literal at compile time! Looks like it will require a compiler
-// plugin and not just a macro though.
-
 #[macro_export]
 macro_rules! list {
-    ( $( $x : expr ),* ) => {{
-        $crate::cons::List::from_slice(&[$($x,)*])
-    }}
+    () => {{ $crate::cons::List::new() }};
+    ($x : expr) => {{ list![].cons($x) }};
+    ($x : expr,) => {{ list![].cons($x) }};
+    ($x : expr, $($xs : expr),* ,) => {{
+        list![$($xs),*].cons($x)
+    }};
+    ($x : expr, $($xs : expr),*) => {{
+        list![$($xs),*].cons($x)
+    }};
 }
-
