@@ -1,1 +1,1 @@
-#[macro_use(list)] extern crate persevere;
+#[macro_use(list)] extern crate dogged;

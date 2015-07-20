@@ -1,5 +1,5 @@
-#[macro_use] extern crate persevere;
-use persevere::cons::*;
+#[macro_use] extern crate dogged;
+use dogged::cons::*;
 use std::clone::Clone;
 
 #[test]

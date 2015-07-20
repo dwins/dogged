@@ -1,5 +1,5 @@
-extern crate persevere;
-use persevere::vector::*;
+extern crate dogged;
+use dogged::vector::*;
 
 #[test]
 fn from_vec65536() {
